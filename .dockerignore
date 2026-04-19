@@ -1,0 +1,6 @@
+config.ini
+docker/docker-compose.yml
+homeassistant/
+.github/
+.idea/
+*.md

@@ -1,0 +1,12 @@
+services:
+  groupalarm:
+    image: ghcr.io/Gurkengewuerz/groupalarm:latest
+    restart: unless-stopped
+    environment:
+      - GROUPALARM_APIKEY=
+      - GROUPALARM_ORGS=
+      - MQTT_HOST=
+      - MQTT_PORT=1883
+      - MQTT_USER=
+      - MQTT_PASSWORD=
+      - MQTT_TOPIC=pager/groupalarm/{org}
