@@ -4,6 +4,7 @@
 if [ -f "/data/options.json" ]; then
     GROUPALARM_APIKEY=$(jq -r '.groupalarm_apikey' /data/options.json)
     GROUPALARM_ORGS=$(jq -r '.groupalarm_orgs' /data/options.json)
+    GROUPALARM_USER_ID=$(jq -r '.groupalarm_user_id // 0' /data/options.json)
     MQTT_HOST=$(jq -r '.mqtt_host' /data/options.json)
     MQTT_PORT=$(jq -r '.mqtt_port' /data/options.json)
     MQTT_USER=$(jq -r '.mqtt_user // ""' /data/options.json)
@@ -24,6 +25,7 @@ cat <<EOF > /app/config.ini
 [groupalarm]
 api_key = ${GROUPALARM_APIKEY}
 organisations = ${GROUPALARM_ORGS}
+user_id = ${GROUPALARM_USER_ID:-0}
 
 [mqtt]
 host = ${MQTT_HOST}

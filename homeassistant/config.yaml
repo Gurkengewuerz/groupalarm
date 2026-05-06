@@ -17,9 +17,11 @@ options:
   mqtt_user: ""
   mqtt_password: ""
   mqtt_topic: "pager/groupalarm/{id}"
+  groupalarm_user_id: 0
 schema:
   groupalarm_apikey: str
   groupalarm_orgs: str
+  groupalarm_user_id: int?
   mqtt_host: str
   mqtt_port: int
   mqtt_user: str?

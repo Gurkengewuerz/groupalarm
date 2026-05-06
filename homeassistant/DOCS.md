@@ -20,6 +20,7 @@ Polls the [GroupAlarm](https://app.groupalarm.com) API every 5 seconds for open 
 | `mqtt_user` | No | — | MQTT username |
 | `mqtt_password` | No | — | MQTT password |
 | `mqtt_topic` | Yes | `pager/groupalarm/{id}` | MQTT topic template. `{id}` is replaced with the alarm ID; `{org}` is replaced with the organisation ID (legacy) |
+| `groupalarm_user_id` | No | `0` | Your GroupAlarm user ID. When set, publishes your personal response state to `…/feedback/own` |
 
 ## MQTT Topics
 
@@ -32,6 +33,7 @@ Each alarm is published across multiple topics. `{id}` = alarm ID (e.g. `998877`
 | `pager/groupalarm/{id}/feedback/positive` | Integer — confirmed responses | Every 5 s while alarm is open |
 | `pager/groupalarm/{id}/feedback/negative` | Integer — declined responses | Every 5 s while alarm is open |
 | `pager/groupalarm/{id}/feedback/unknown` | Integer — pending responses | Every 5 s while alarm is open |
+| `pager/groupalarm/{id}/feedback/own` | Your personal state: `positive`, `negative`, or `unknown` | Every 5 s (only when `groupalarm_user_id` is set) |
 | `pager/groupalarm/{id}/meta` | JSON with all fields (see below) | Every 5 s while alarm is open |
 
 **Example `meta` payload:**
@@ -70,7 +72,13 @@ mqtt:
     - name: "Einsatz Ausstehend"
       state_topic: "pager/groupalarm/+/feedback/unknown"
       unit_of_measurement: "Personen"
+
+    - name: "Meine Rückmeldung"
+      state_topic: "pager/groupalarm/+/feedback/own"
+      # state is: positive / negative / unknown
 ```
+
+To stop an automation when you have responded, use an MQTT trigger on `pager/groupalarm/+/feedback/own` and check `trigger.payload` for `positive` or `negative`.
 
 Use `pager/groupalarm/+` as a trigger topic in automations to fire on any new alarm message.
 

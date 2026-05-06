@@ -31,6 +31,11 @@ type Event []struct {
 	Archived       bool   `json:"archived"`
 }
 
+type FeedbackEntry struct {
+	UserID int    `json:"userID"`
+	State  string `json:"state"`
+}
+
 type AlarmEntry struct {
 	ID      int    `json:"id"`
 	Message string `json:"message"`
@@ -38,7 +43,8 @@ type AlarmEntry struct {
 		ID   int    `json:"id"`
 		Name string `json:"name"`
 	} `json:"event"`
-	OrganizationID     int `json:"organizationID"`
+	OrganizationID     int             `json:"organizationID"`
+	Feedback           []FeedbackEntry `json:"feedback"`
 	FeedbackQuantity   struct {
 		Positive int `json:"positive"`
 		Negative int `json:"negative"`
@@ -63,6 +69,7 @@ func main() {
 
 	apiKey := cfg.Section("groupalarm").Key("api_key").String()
 	organisations := cfg.Section("groupalarm").Key("organisations").Strings(",")
+	userID := cfg.Section("groupalarm").Key("user_id").MustInt(0)
 
 	mqttHost := cfg.Section("mqtt").Key("host").String()
 	mqttPort, err := cfg.Section("mqtt").Key("port").Int()
@@ -122,7 +129,7 @@ func main() {
 			return
 		case <-ticker.C:
 			for _, org := range organisations {
-				pollOrg(httpClient, apiKey, org, mqttClient, mqttTopic, knownIDs)
+				pollOrg(httpClient, apiKey, org, userID, mqttClient, mqttTopic, knownIDs)
 			}
 		}
 	}
@@ -138,7 +145,7 @@ func publish(client mqtt.Client, topic, payload string) {
 	client.Publish(topic, 1, false, payload)
 }
 
-func pollOrg(httpClient *resty.Client, apiKey, org string, mqttClient mqtt.Client, topicTpl string, knownIDs map[int]struct{}) {
+func pollOrg(httpClient *resty.Client, apiKey, org string, userID int, mqttClient mqtt.Client, topicTpl string, knownIDs map[int]struct{}) {
 	var events Event
 	resp, err := httpClient.R().
 		SetQueryParam("organization", org).
@@ -195,12 +202,24 @@ func pollOrg(httpClient *resty.Client, apiKey, org string, mqttClient mqtt.Clien
 			publish(mqttClient, base+"/feedback/negative", strconv.Itoa(fq.Negative))
 			publish(mqttClient, base+"/feedback/unknown", strconv.Itoa(fq.Unknown))
 
+			// publish own feedback state if user_id is configured
+			if userID != 0 {
+				ownState := "unknown"
+				for _, fb := range alarm.Feedback {
+					if fb.UserID == userID {
+						ownState = fb.State
+						break
+					}
+				}
+				publish(mqttClient, base+"/feedback/own", ownState)
+			}
+
 			meta := struct {
-				AlarmID        int     `json:"alarm_id"`
-				OrganizationID int     `json:"organization_id"`
-				EventID        int     `json:"event_id"`
-				Title          string  `json:"title"`
-				Message        string  `json:"message"`
+				AlarmID        int    `json:"alarm_id"`
+				OrganizationID int    `json:"organization_id"`
+				EventID        int    `json:"event_id"`
+				Title          string `json:"title"`
+				Message        string `json:"message"`
 				Feedback       struct {
 					Positive int `json:"positive"`
 					Negative int `json:"negative"`
