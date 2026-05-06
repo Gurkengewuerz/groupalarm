@@ -19,16 +19,69 @@ Polls the [GroupAlarm](https://app.groupalarm.com) API every 5 seconds for open 
 | `mqtt_port` | Yes | `1883` | MQTT broker port |
 | `mqtt_user` | No | — | MQTT username |
 | `mqtt_password` | No | — | MQTT password |
-| `mqtt_topic` | Yes | `pager/groupalarm/{org}` | MQTT topic template. `{org}` is replaced with the organisation ID |
+| `mqtt_topic` | Yes | `pager/groupalarm/{id}` | MQTT topic template. `{id}` is replaced with the alarm ID; `{org}` is replaced with the organisation ID (legacy) |
 
-## MQTT Payload
+## MQTT Topics
 
-Each alarm is published as the raw alarm message string to the configured topic with QoS 1.
+Each alarm is published across multiple topics. `{id}` = alarm ID (e.g. `998877`).
 
-**Example topic:** `pager/groupalarm/19184`
-**Example payload:** `Alarm: Fire in building A`
+| Topic | Payload | Published |
+|-------|---------|-----------|
+| `pager/groupalarm/{id}` | Raw alarm message string | Once, on first alarm detection |
+| `pager/groupalarm/{id}/title` | Event name (e.g. `B2 Wohnungsbrand`) | Once, on first alarm detection |
+| `pager/groupalarm/{id}/feedback/positive` | Integer — confirmed responses | Every 5 s while alarm is open |
+| `pager/groupalarm/{id}/feedback/negative` | Integer — declined responses | Every 5 s while alarm is open |
+| `pager/groupalarm/{id}/feedback/unknown` | Integer — pending responses | Every 5 s while alarm is open |
+| `pager/groupalarm/{id}/meta` | JSON with all fields (see below) | Every 5 s while alarm is open |
+
+**Example `meta` payload:**
+```json
+{
+  "alarm_id": 998877,
+  "organization_id": 19184,
+  "event_id": 55432,
+  "title": "B2 Wohnungsbrand",
+  "message": "Alarm: Feuer in Gebäude A",
+  "feedback": { "positive": 3, "negative": 1, "unknown": 5 },
+  "feedback_pct": { "positive": 33.3, "negative": 11.1, "unknown": 55.6 }
+}
+```
+
+## Home Assistant Sensor Examples
+
+```yaml
+mqtt:
+  sensor:
+    - name: "Einsatz Nachricht"
+      state_topic: "pager/groupalarm/+/meta"
+      value_template: "{{ value_json.message }}"
+
+    - name: "Einsatz Titel"
+      state_topic: "pager/groupalarm/+/title"
+
+    - name: "Einsatz Zugesagt"
+      state_topic: "pager/groupalarm/+/feedback/positive"
+      unit_of_measurement: "Personen"
+
+    - name: "Einsatz Abgelehnt"
+      state_topic: "pager/groupalarm/+/feedback/negative"
+      unit_of_measurement: "Personen"
+
+    - name: "Einsatz Ausstehend"
+      state_topic: "pager/groupalarm/+/feedback/unknown"
+      unit_of_measurement: "Personen"
+```
+
+Use `pager/groupalarm/+` as a trigger topic in automations to fire on any new alarm message.
+
+## Migration from v1.x
+
+The default topic template changed from `pager/groupalarm/{org}` to `pager/groupalarm/{id}`.
+
+If you have existing automations that listen on `pager/groupalarm/{org}` (e.g. `pager/groupalarm/19184`), update them to use `pager/groupalarm/+` as a wildcard trigger, or set `mqtt_topic` back to `pager/groupalarm/{org}` manually (the `{org}` placeholder is still supported).
 
 ## Notes
 
 - Alarm IDs are tracked in memory only. Restarting the add-on will cause already-seen alarms from open events to be re-published.
 - The add-on connects to the built-in Mosquitto broker by default (`core-mosquitto`). Install the **Mosquitto broker** add-on if you haven't already.
+- Feedback counters (`feedback/positive`, etc.) are updated on every poll cycle (every 5 s) as long as the event remains open.

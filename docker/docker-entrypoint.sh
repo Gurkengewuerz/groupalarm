@@ -31,7 +31,7 @@ port = ${MQTT_PORT:-1883}
 user = ${MQTT_USER}
 password = ${MQTT_PASSWORD}
 client = groupalarm_app-$RANDOM
-topic = ${MQTT_TOPIC:-"pager/groupalarm/{org}"}
+topic = ${MQTT_TOPIC:-"pager/groupalarm/{id}"}
 
 EOF
 

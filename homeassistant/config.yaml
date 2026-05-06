@@ -1,6 +1,6 @@
 name: GroupAlarm MQTT Bridge
 description: Polls the GroupAlarm API for open alarms and publishes new alarms to an MQTT broker.
-version: "1.0.0"
+version: "2.0.0"
 slug: groupalarm
 init: false
 arch:
@@ -16,7 +16,7 @@ options:
   mqtt_port: 1883
   mqtt_user: ""
   mqtt_password: ""
-  mqtt_topic: "pager/groupalarm/{org}"
+  mqtt_topic: "pager/groupalarm/{id}"
 schema:
   groupalarm_apikey: str
   groupalarm_orgs: str

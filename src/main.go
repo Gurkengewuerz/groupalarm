@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -30,11 +31,28 @@ type Event []struct {
 	Archived       bool   `json:"archived"`
 }
 
+type AlarmEntry struct {
+	ID      int    `json:"id"`
+	Message string `json:"message"`
+	Event   struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	} `json:"event"`
+	OrganizationID     int `json:"organizationID"`
+	FeedbackQuantity   struct {
+		Positive int `json:"positive"`
+		Negative int `json:"negative"`
+		Unknown  int `json:"unknown"`
+	} `json:"feedbackQuantity"`
+	FeedbackPercentage struct {
+		Positive float64 `json:"positive"`
+		Negative float64 `json:"negative"`
+		Unknown  float64 `json:"unknown"`
+	} `json:"feedbackPercentage"`
+}
+
 type Alarm struct {
-	Alarms []struct {
-		ID      int    `json:"id"`
-		Message string `json:"message"`
-	} `json:"alarms"`
+	Alarms []AlarmEntry `json:"alarms"`
 }
 
 func main() {
@@ -110,6 +128,16 @@ func main() {
 	}
 }
 
+func resolveTopic(tpl, org string, alarmID int) string {
+	t := strings.ReplaceAll(tpl, "{org}", org)
+	t = strings.ReplaceAll(t, "{id}", strconv.Itoa(alarmID))
+	return strings.TrimRight(t, "/")
+}
+
+func publish(client mqtt.Client, topic, payload string) {
+	client.Publish(topic, 1, false, payload)
+}
+
 func pollOrg(httpClient *resty.Client, apiKey, org string, mqttClient mqtt.Client, topicTpl string, knownIDs map[int]struct{}) {
 	var events Event
 	resp, err := httpClient.R().
@@ -146,17 +174,62 @@ func pollOrg(httpClient *resty.Client, apiKey, org string, mqttClient mqtt.Clien
 		}
 
 		for _, alarm := range alarmResp.Alarms {
-			if _, seen := knownIDs[alarm.ID]; seen {
-				continue
-			}
 			if !mqttConnected {
 				log.Printf("[mqtt] skipping alarm %d - not connected", alarm.ID)
 				continue
 			}
-			topic := strings.ReplaceAll(topicTpl, "{org}", org)
-			mqttClient.Publish(topic, 1, false, alarm.Message)
-			knownIDs[alarm.ID] = struct{}{}
-			log.Printf("[mqtt] published alarm %d: %s", alarm.ID, alarm.Message)
+
+			base := resolveTopic(topicTpl, org, alarm.ID)
+
+			// publish static fields only once per alarm
+			if _, seen := knownIDs[alarm.ID]; !seen {
+				publish(mqttClient, base, alarm.Message)
+				publish(mqttClient, base+"/title", alarm.Event.Name)
+				knownIDs[alarm.ID] = struct{}{}
+				log.Printf("[mqtt] published alarm %d: %s", alarm.ID, alarm.Message)
+			}
+
+			// publish live feedback on every tick
+			fq := alarm.FeedbackQuantity
+			publish(mqttClient, base+"/feedback/positive", strconv.Itoa(fq.Positive))
+			publish(mqttClient, base+"/feedback/negative", strconv.Itoa(fq.Negative))
+			publish(mqttClient, base+"/feedback/unknown", strconv.Itoa(fq.Unknown))
+
+			meta := struct {
+				AlarmID        int     `json:"alarm_id"`
+				OrganizationID int     `json:"organization_id"`
+				EventID        int     `json:"event_id"`
+				Title          string  `json:"title"`
+				Message        string  `json:"message"`
+				Feedback       struct {
+					Positive int `json:"positive"`
+					Negative int `json:"negative"`
+					Unknown  int `json:"unknown"`
+				} `json:"feedback"`
+				FeedbackPct struct {
+					Positive float64 `json:"positive"`
+					Negative float64 `json:"negative"`
+					Unknown  float64 `json:"unknown"`
+				} `json:"feedback_pct"`
+			}{
+				AlarmID:        alarm.ID,
+				OrganizationID: alarm.OrganizationID,
+				EventID:        alarm.Event.ID,
+				Title:          alarm.Event.Name,
+				Message:        alarm.Message,
+			}
+			meta.Feedback.Positive = fq.Positive
+			meta.Feedback.Negative = fq.Negative
+			meta.Feedback.Unknown = fq.Unknown
+			meta.FeedbackPct.Positive = alarm.FeedbackPercentage.Positive
+			meta.FeedbackPct.Negative = alarm.FeedbackPercentage.Negative
+			meta.FeedbackPct.Unknown = alarm.FeedbackPercentage.Unknown
+
+			if b, err := json.Marshal(meta); err != nil {
+				log.Printf("[mqtt] failed to marshal meta for alarm %d: %v", alarm.ID, err)
+			} else {
+				publish(mqttClient, base+"/meta", string(b))
+			}
 		}
 	}
 }
